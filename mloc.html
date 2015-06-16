@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Closing the gap with native performance</title>
+    <meta charset="utf-8">
+    <style>
+      @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+      @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+      @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);
+
+      body { font-family: 'Droid Serif'; }
+      h1, h2, h3 {
+        font-family: 'Yanone Kaffeesatz';
+        font-weight: normal;
+      }
+      .remark-code, .remark-inline-code { font-family: 'Ubuntu Mono'; }
+    </style>
+  </head>
+  <body>
+    <textarea id="source">
+
+class: center, middle
+
+# Closing the gap with native performance
+
+---
+
+# agenda
+
+1. Past
+2. Present
+3. Future
+
+---
+
+# who's that [@bnjbvr](https://twitter.com/bnjbvr) guy
+
+???
+
+Working at Mozilla on the JavaScript engine, have been working on asm.js,
+SIMD.js.
+
+TODO: add mozilla logo + picture of lyon
+
+---
+
+# asm.js
+
+- "use asm"
+- Subset of JS
+- Easy to optimize
+- Can be compiled AOT [1]...
+- ... but runs in all browsers **today**!
+
+[1] as in Firefox [2].
+[2] as in Edge too!
+
+???
+
+TODO: find out how to create footnotes
+
+---
+
+# emscripten
+
+- a C/C++ to JS cross-compiler
+- based on LLVM
+- can target asm.js
+
+???
+
+How does that perform?
+
+TODO: include a picture of Alon's presentation
+
+---
+
+# heard you like benchmarks
+
+- On release, 2x speed of native!
+- As of today, 1.5x speed of native!
+- Tomorrow... 1x speed of native!
+- Or less?
+
+---
+
+# some improvements to asm.js perf
+
+- Add Float32 arithmetic to asm.js via `Math.fround`
+- Bounds checks optimizations for heap accesses
+- Optimization of ternary conditionals
+- ... misc compilation optimizations
+
+???
+
+TODO: is it really useful?
+
+    </textarea>
+    <script src="./remark-latest.min.js">
+    </script>
+    <script>
+      var slideshow = remark.create();
+    </script>
+  </body>
+</html>
