@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Closing the gap with native performance</title>
+    <meta charset="utf-8">
+    <style>
+      @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+      @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+      @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);
+
+      body {
+        font-family: 'Droid Serif';
+      }
+
+      p, li {
+        font-size: 2.0em;
+      }
+
+      h1, h2, h3 {
+        font-family: 'Yanone Kaffeesatz';
+        font-weight: normal;
+      }
+
+      .half img {
+          width: 49%;
+      }
+
+      .full img {
+          width: 100%;
+      }
+
+      .textformat {
+          font-size: 7em;
+      }
+
+      .remark-code, .remark-inline-code { font-family: 'Ubuntu Mono'; }
+    </style>
+  </head>
+  <body>
+    <textarea id="source">
+
+class: center, middle
+
+# Closing the gap with native performance
+
+---
+
+???
+
+(THIS IS A PLACEHOLDER. YOU SHOULDN'T SEE IT. WELL, AT LEAST, YOU SHOULDN'T
+LOOK AT IT.)
+
+---
+
+# Who's that [@bnjbvr](https://twitter.com/bnjbvr) guy
+
+.half[![Left-aligned image](pics/firefox.png)]
+.half[![Right-aligned image](pics/asmjs.png)]
+
+???
+
+Working at Mozilla on the JavaScript engine, have been working on asm.js,
+SIMD.js.
+
+---
+
+background-image: url(pics/lyon.jpg)
+
+???
+
+This is Lyon, France. It is lovely.
+
+---
+
+# "use asm";
+
+- Subset of JS
+- Easy to optimize
+- Can be compiled AOT
+
+```javascript
+function module(glob, ffi, heap) {
+    'use asm';
+    var sqrt = glob.Math.sqrt;
+    function f(x, y) {
+        x = +x;
+        y = +y;
+        return +sqrt(+(x*x) + +(y*y));
+    }
+    return f;
+}
+```
+
+???
+
+subset of JS => it can run on all browsers today
+
+easy to optimize => type safety
+
+can be compiled AOT => ensure performance (no objects, no GC, no boxing, no
+bailout, etc. makes everything simpler and faster!)
+
+it matters enough that v8, google's JavaScript team, decided to include an
+asm.js benchmark to their real-world JS benchmarking suite "Octane".
+
+---
+
+# Emscripten
+
+- A C/C++ to JS cross-compiler
+- Based on LLVM
+- Can target *asm.js*
+
+.half[![Right-aligned image](pics/emscripten.png)]
+.half[![Right-aligned image](pics/mlocazakai.png)]
+
+???
+
+- It has some really nice documentation.
+- Can be used to compile existing big code bases of C/C++ to JS, with really
+good performance.
+- It's been widely used for compiling video games. Unity and Unreal Engine have
+an option to emit WebGL / JS based code, which uses Emscripten under the hood.
+
+---
+
+# Many other compilers to JS
+
+- C/C++: Duetto, Mandreel
+- JVM: GWT, Scala.js
+- C#/.NET: JSIL
+- Faust
+- Many script languages: coffee, typescript, dart, ...
+
+???
+
+Faust is an audio language and compiler that can emit Web Audio nodes, so as to 
+play music directly in a web browser. It can even emit asm.js code!
+
+How does asm.js and emscripten perform?
+
+---
+
+# What about throughput?
+
+On release, 2x slower than native.
+Today, 1.5x slower than native.
+
+???
+
+Those are measures in average, on a set of given benchmarks, of course.
+
+The objective for the future is as fast as, if not faster than, native.
+
+---
+
+class: middle, center
+
+# [How does that perform?](http://beta.unity3d.com/DT2)
+
+---
+
+class: middle, center
+
+# How can we close the gap?
+
+???
+
+Different approaches for that matter.
+
+One of them:
+Give developers access to more low-level machine features in JS, to be
+able to compete with native.
+
+---
+
+# Int64
+
+- JS has a 'Number' type, that JIT can optimize as int32 or double.
+- Int64 arithmetic can be emulated with two Int32...
+- ... but it'd be hard for a JIT to optimize with int64 instructions.
+
+???
+
+- No way to efficiently perform int64 arithmetic in JS.
+- Widely used in video games, crypto.
+- Polyfills for add could be pattern matched, but not for multiply/divide.
+
+---
+
+# New Value Types
+
+- Proposed new value types: `int64`, `uint64`, `float32`, `float64`, etc.
+- Overloading operators: `+`, `-`, `/`, `*`, for instance, etc.
+- Might be in ~~ES7~~ ES2016 or later.
+
+---
+
+class: middle, center
+
+# Typed Objects
+
+---
+
+# The motivation
+
+```javascript
+    var o = {
+        x: 13,
+        y: 37
+    };
+    // use o.x and o.y as integers
+    for (var i = 0; i < 1000; i++) {
+        o.y = o.x;
+        o.x = o.y + i;
+    }
+    o.x = 13.37; // nothing prevents this
+    o.x = false; // or that
+    delete o.x;  // or even that!
+```
+
+???
+
+Although we need memory for only 2 int32, we need space in case we store
+doubles at some point.
+
+For instance, a JIT can optimize an object but have to invalidate its code
+because of bad usage (replace a value by a boolean, or undefined, etc.).
+
+Memory usage is also hard to predict.
+
+---
+
+# The solution
+
+- Add a way to describe structured data with members that have defined types:
+**Typed Objects**.
+- Types among {u,}int{8,16,32,64} / float{32,64} / String / Object, etc..
+
+???
+
+A plain equivalent to C structures.
+
+---
+
+# Create your own structs!
+
+```javascript
+var {StructType, ArrayType} = TypedObject;
+
+// Create a simple type
+var Pixel = new StructType({'r': uint8, 'g': uint8, 'b': uint8});
+
+// Create an array
+var Square = new ArrayType(Pixel, 4);
+
+// Compose types
+var Image = new StructType({'id': uint16, 'src': Square});
+```
+
+---
+
+# Usage
+
+```javascript
+var p = new Pixel({r: 128, g: 42, b: 25});
+p.g; // shows 42
+p.g = 1337
+p.g; // shows 57
+p.g = false;
+p.g; // shows 0
+
+// Omit a field in the constructor to give it a default value
+var p2 = new Pixel({r: 128, b: 56});
+p2.g; // shows 0
+
+var sq = new Square([
+    {r: 24, g: 35, b: 46},
+    {r: 52, g: 63, b: 74},
+    p,
+    p2
+]);
+
+var img = new Image({
+    id: 42,
+    src: sq
+})
+```
+
+???
+
+Avantages:
+- no boxing processing overhead
+- better memory layout
+- no deoptimizations due to shapes changing
+- => more predicable performance
+- interaction with GC, would help integration of GC'd languages (hello Java/.NET).
+
+Already implemented in Firefox Nightly, but still quite far away from standardization.
+
+---
+
+class: middle, center
+
+# SIMD.js
+
+---
+
+# What is SIMD?
+
+- **S**ingle **I**nstruction, **M**ultiple **D**ata
+- Processor instructions, arch-specific: x86 has SSE, ARM has NEON, etc.
+
+![Centered image](pics/simd.jpg)
+
+---
+
+# Why is SIMD useful?
+
+- Let's take e.g. Float32x4.
+- If your processor can execute one instruction rather than four, you get a
+*theoritical* **4x** speedup.
+- Massively used in heavily parallel processing such as audio / image
+processing, codecs, games...
+
+???
+
+"Embarrassingly parallel problems".
+
+EP: when you have to go through an entire array and apply the same pure
+functions on each item.
+
+---
+
+# The SIMD.js model
+
+- Fixed-length: 128 bits (much useful, well supported, very SIMD, wow).
+- Uniform behavior of operations across platforms.
+- New value types: int8x16, int16x8, int32x4, float32x4, float64x2.
+- These can be embedded in Typed Object descriptors!
+
+???
+
+Fixed-length for now.
+
+May include arch-specific operations in the future which presence could be
+feature-tested, and platforms which don't support them would polyfill them with
+other equivalent sequences of assembly instructions.
+
+---
+
+# Available operations
+
+- Basic arithmetic
+- Comparisons
+- Conversions and bitcasts
+- Bitwise operations
+- Manipulate data (selects, shuffles,...)
+
+---
+
+# CAN HAZ CODE? OKTHXBYE;
+
+```javascript
+function fibonacci4(n) {
+    var x = SIMD.Int32x4(1, 1, 2, 3);
+    var y = SIMD.Int32x4(1, 2, 3, 5);
+
+    while (n--) {
+        var tmp = y;
+        y = SIMD.Int32x4.add(x, y);
+        x = tmp;
+    }
+
+    return x;
+}
+
+var v = fibonacci4(10);
+console.log(v.x, v.y, v.z, v.w); // (89, 144, 233, 377)
+```
+
+---
+
+# Status
+
+Should be in ~~ES7~~ ES2016 (Stage 2)
+
+[github.com/johnmccutchan/ecmascript_simd](https://github.com/johnmccutchan/ecmascript_simd)
+
+???
+
+Spec and polyfill at the given address.
+
+---
+
+# Parallelism in JavaScript
+
+- C/C++ users want threads.
+- There are `Web Workers`, but they're strongly isolated.
+- Generic parallelization patterns are hard to get right (ParallelJS, e.g.
+`Array.mapPar`).
+
+???
+
+The only way to pass messages is via postMessage, which is expensive (at best,
+copy-on-write, at worst, COPY).
+
+Parallel JS is nice in theory, but it's hard to make a very high-level,
+one-for-all model.
+
+How can we do better? How to offer a model that would fit all use cases?
+
+---
+
+# Shared Array Buffers
+
+- Extensible Web approach: prefer low-level orthogonal primitives over
+high-level APIs.
+- `SharedArrayBuffer` are `ArrayBuffer` that can be shared among workers.
+- Add `Atomic` primitives.
+
+???
+
+Now let's quickly skip to the FAQ.
+
+---
+
+background-image: url(pics/eow.jpg)
+
+???
+
+Will this mean the end of the JavaScript world as we know it?
+
+At this point, you might feel like this: new race conditions? deadlocks?
+livelocks? sigh.
+
+---
+
+# Fear not
+
+- (There already are race conditions on the Web platform.)
+- This is **opt-in**.
+- Limited to workers.
+
+???
+
+Race conditions due to network / UI.
+
+With great power comes great responsability, as once said the world famous scientist
+Uncle Ben. How do you know he's a world famous scientist?
+
+---
+
+background-image: url(pics/uncleben.png)
+
+???
+
+Back to serious: if we put aside new features that we should give access
+to, what are the other asm.js bottlenecks?
+
+---
+
+class: middle, center
+
+# Compilation time
+
+Matters a lot on mobile devices.
+
+---
+
+# Proposed solutions
+
+- Stream the compilation process (read bytes, parsing, IR creation, compilation)
+- Caching
+- Emterpreter
+- **Web Assembly**
+
+???
+
+Emterpreter: compiling the app as a form of bytecode that can be interpreted,
+then interpret this bytecode while we compile the entire codebase aside.
+
+Nowadays, parsing is the bottleneck.
+
+---
+
+class: middle, center
+
+# Transport
+
+???
+
+Code bases can be **huge**.
+
+---
+
+# Proposed solutions
+
+- Server-side compression (gzip).
+- Vendor-specific compression.
+- **Web Assembly**
+
+???
+
+Compression on the server implies decompression on the client, which is also
+costful on mobile.
+
+---
+
+# Web Assembly TL:DR;
+
+A new standard format and execution model designed as a compilation target for
+the Web!
+
+???
+
+Evolution of asm.js.
+
+Supported by Google, Microsoft, Mozilla and Webkit!
+
+Not trying to kill JS, which will remain the privileged dynamic language of the
+web. Many ways of interacting with it (high performance wasm modules, entire
+C++ apps compiled to wasm with JS being the glue, etc.).
+
+---
+
+# Solves all three problems!
+
+- `wasm` is a binary bytecode format denser than JavaScript:
+![Centered image](pics/wasm-size.png)
+- It is faster to decode `wasm` than parsing the equivalent `asm.js`.
+- A new standard makes it much easier to add features.
+
+???
+
+2) is ideal for streaming the compilation process.
+
+---
+
+# When can I use it?
+
+- There's an `asm.js` polyfill for `wasm`, and `asm.js` is just JS, so it can
+run on all browsers today.
+- Emscripten is getting a flag for packing the `asm.js` code into `wasm`
+bytecode, but later will integrate `wasm` directly in the pipeline.
+
+???
+
+asm.js will need to co-evolve with wasm for a short-term period.
+
+---
+
+# But I liked `view-source`!
+
+Fear not, for there will be a
+
+.textformat[[TEXT
+FORMAT](https://github.com/WebAssembly/design/blob/master/TextFormat.md)]
+
+???
+
+So you can test directly small chunks of code in your browser.
+
+---
+
+# Conclusion
+
+[github.com/WebAssembly/design](https://github.com/webassembly/design)
+
+![Centered image](pics/be.png)
+
+???
+
+Feel free to participate to the discussions about WebAssembly, it's on github!
+
+---
+
+class:middle,center
+
+# Thank you!
+
+Questions?
+
+@bnjbvr / ben@mozilla.com
+
+---
+
+background-image: url(pics/embiggen.png)
+
+???
+
+If you were wondering what the origin of the word emscripten was, this is it.
+You can craft verbs from adjectives or nouns that sound like they're correct
+english, although they aren't. Embiggen and emscripten are part of them.
+
+
+    </textarea>
+    <script src="./remark-latest.min.js">
+    </script>
+    <script>
+      var slideshow = remark.create();
+    </script>
+  </body>
+</html>
